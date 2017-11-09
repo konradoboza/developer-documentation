@@ -689,6 +689,10 @@ We use the `ContentService::loadVersions()` method and get an array of `VersionI
 
 In this section we will cover how the [`SearchService`](http://apidoc.ez.no/sami/trunk/NS/html/eZ/Publish/API/Repository/SearchService.html) can be used to search for Content, by using a [`Query`](http://apidoc.ez.no/sami/trunk/NS/html/eZ/Publish/API/Repository/Values/Content/Query.html) and a combinations of [`Criteria`](http://apidoc.ez.no/sami/trunk/NS/html/eZ/Publish/API/Repository/Values/Content/Query/Criterion.html) you will get a [`SearchResult`](http://apidoc.ez.no/sami/trunk/NS/html/eZ/Publish/API/Repository/Values/Content/Search/SearchResult.html) object back containing list of Content and count of total hits. In the future this object will also include facets, spell checking and "more like this" when running on a backend that supports it *(for instance Solr)*.
 
+!!! note
+
+    To actually find anything using API described in this section, you need to create some content (articles, folders) under eZ Platform root.
+
 ##### Difference between filter and query
 
 Query object contains two properties you can set criteria on, `filter` and `query`, and while you can mix and match use and use both at the same time, there is one distinction between the two:
@@ -697,6 +701,10 @@ Query object contains two properties you can set criteria on, `filter` and `quer
     -   Typically you'll use this for `FullText` search criterion, and otherwise place everything else on `filter`.
 
 #### Performing a simple full text search
+
+!!! tip "Checking feature support per search engine"
+
+    To find out if a given search engine supports advanced full text capabilities, use the [`$searchService->supports($capabilityFlag)`](https://github.com/ezsystems/ezpublish-kernel/blob/master/eZ/Publish/API/Repository/SearchService.php#L187-L197) method.
 
 Full code
 
@@ -755,7 +763,7 @@ As explained in the previous chapter, Criterion objects are grouped together usi
 
 ``` php
 use eZ\Publish\API\Repository\Values\Content\Query\Criterion;
-use eZ\Publish\API\Repository\Values\Content;
+use eZ\Publish\API\Repository\Values\Content\Query;
 
 // [...]
 
@@ -811,7 +819,7 @@ Following the examples above we now change it a bit to combine several criteria 
 
 ``` javascript
 use eZ\Publish\API\Repository\Values\Content\Query\Criterion;
-use eZ\Publish\API\Repository\Values\Content;
+use eZ\Publish\API\Repository\Values\Content\Query;
 
 // [...]
 
@@ -843,7 +851,7 @@ You can also use the [`ContentTypeIdentifier`](http://apidoc.ez.no/sami/trunk/NS
 
 ``` php
 use eZ\Publish\API\Repository\Values\Content\Query\Criterion;
-use eZ\Publish\API\Repository\Values\Content;
+use eZ\Publish\API\Repository\Values\Content\Query;
 
 // [...]
 
@@ -1050,7 +1058,7 @@ We can now use `ContentService::updateContent()` to apply our `ContentUpdateStru
 
 In the two previous examples, you have seen that we set the ContentUpdateStruct's `initialLanguageCode` property. To translate an object to a new language, set the locale to a new one.
 
-**translating**
+#### translating
 
 ``` php
 $contentUpdateStruct->initialLanguageCode = 'ger-DE';
@@ -1060,7 +1068,7 @@ $contentUpdateStruct->setField( 'body', $newbody );
 
 It is possible to create or update content in multiple languages at once. There is one restriction: only one language can be set a version's language. This language is the one that will get a flag in the back office. However, you can set values in other languages for your attributes, using the `setField` method's third argument.
 
-**update multiple languages**
+#### update multiple languages
 
 ``` php
 // set one language for new version
@@ -1074,6 +1082,48 @@ $contentUpdateStruct->setField( 'body', $newfrenchbody );
 ```
 
 Since we don't specify a locale for the last two fields, they are set for the `UpdateStruct`'s `initialLanguageCode`, fre-FR.
+
+#### delete translations
+
+##### delete translations from a Content item version
+
+To delete translations from a Content item version, use the `deleteTranslationFromDraft` method on `ContentService`.
+
+```
+public function deleteTranslationFromDraft(VersionInfo $versionInfo, string $languageCode) : Content
+```
+
+This method returns a Content draft without the specified translation.
+
+!!! note
+
+    To remove the main translation, the main language needs to be changed manually
+    using the `ContentService::updateContentMetadata` method first.
+    Otherwise the method will throw an `\eZ\Publish\API\Repository\Exceptions\BadStateException`.
+
+
+The PHP API consumer is responsible for creating a Content item version draft and publishing it after translation removal.
+
+Since the returned Content draft is to be published, both search and HTTP cache are already handled
+by `PublishVersion` slots once the call to `publishVersion()` is made.
+
+Example:
+
+``` php
+$repository->beginTransaction();
+/** @var \eZ\Publish\API\Repository\Repository $repository */
+try {
+    $versionInfo = $contentService->loadVersionInfoById($contentId, $versionNo);
+    $contentDraft = $contentService->createContentDraft($versionInfo->contentInfo, $versionInfo);
+    $contentDraft = $contentService->deleteTranslationFromDraft($contentDraft->versionInfo, $languageCode);
+    $contentService->publishVersion($contentDraft->versionInfo);
+
+    $repository->commit();
+} catch (\Exception $e) {
+    $repository->rollback();
+    throw $e;
+}
+```
 
 ### Creating Content containing an image
 

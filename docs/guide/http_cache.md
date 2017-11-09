@@ -107,8 +107,49 @@ ezpublish:
             content:
                 view_cache: true      # Activates HttpCache for content
                 ttl_cache: true       # Activates expiration based HttpCache for content (very fast)
-                default_ttl: 60       # Number of seconds an Http response is valid in cache (if ttl_cache is true)
+                default_ttl: 60       # Number of seconds an Http response cache is valid (if ttl_cache is true, and if no custom s-maxage is set)
 ```
+
+##### Cache and Expiration Configuration for error pages
+
+It is normal to want to set the `default_ttl` setting above high to have a high cache hit ratio on your installation. As the system takes care of purges, the cache rarely becomes stale.
+
+However, a few redirect and error pages are served via the ContentView system, and if you do set a high `default_ttl`, you should make sure to set those pages to a much lower ttl to avoid issues caused by that. For this you can use the [FOSHttpCacheBundle matching rules](http://foshttpcachebundle.readthedocs.io/en/1.3/reference/configuration/headers.html) feature to specify a different ttl time:
+
+``` yaml
+fos_http_cache:
+    cache_control:
+        rules:
+            # Make sure cacheable (fresh) responses from eZ Platform which are errors/redirects gets lower ttl than default_ttl
+            -
+                match:
+                    match_response: "response.isFresh() && ( response.isServerError() || response.isClientError() || response.isRedirect() )"
+                headers:
+                    overwrite: true
+                    cache_control:
+                        max_age: 5
+                        s_maxage: 20
+```
+
+Similarly, if you want to apply performance tuning to avoid crawlers affecting the setup too much, you can also set up caching of generic 404's and similar error pages in the following way:
+
+``` yaml
+fos_http_cache:
+    cache_control:
+        rules:
+            # Example of performance tuning, force TTL on 404 pages to avoid crawlers, etc., taking too much load
+            # Should not be set too high, as cached 404's can cause issues for future routes, URL aliases, wildcards, etc.
+            -
+                match:
+                    match_response: "!response.isFresh() && response.isNotFound()"
+                headers:
+                    overwrite: true
+                    cache_control:
+                        public: true
+                        max_age: 0
+                        s_maxage: 20
+```
+
 
 #### Making your controller response content-aware
 
@@ -686,6 +727,12 @@ set req.http.X-User-Hash = "b1731d46b0e7a375a5b024e950fdb8d49dd25af85a5c7dd5116a
 ```
 
 **5.** Restart the Varnish server and everything should work fine.
+
+##### Known limitations of the user hash generation
+
+A few limitations are known:
+
+* If you are using uri-based SiteAccesses matching, the default SiteAccess on the domain needs to point to the same repository, because `/_fos_user_context_hash` is not SiteAccess-aware by default (see `ezpublish.default_router.non_siteaccess_aware_routes` parameter). Varnish does not have knowledge about SiteAccesses, so it won't be able to get user content hash if the default siteaccess relies on URI.  
 
 ##### Default options for FOSHttpCacheBundle defined in eZ
 
